@@ -107,7 +107,7 @@ class _DrawingPlaygroundState extends State<DrawingPlayground> {
       return _config.customColor!;
     }
     if (_config.faceType == FaceType.robot) {
-      return const Color(0xFF94A3B8); // Metallic slate for robot
+      return const Color(0xFFA3E635); // Lime green for robot matching official demo
     }
     if (_config.mood < 0.35) {
       return Colors.lightBlue.shade200; // Cool color for frown
@@ -120,7 +120,8 @@ class _DrawingPlaygroundState extends State<DrawingPlayground> {
 
   String get moodLabel {
     if (_config.mood >= 0.85) return 'Beaming';
-    if (_config.mood > 0.70) return 'Happy';
+    if (_config.mood > 0.55) return 'Happy';
+    if (_config.mood >= 0.45) return 'Soft smile';
     if (_config.mood >= 0.35) return 'Neutral';
     return 'Sad';
   }
@@ -193,6 +194,8 @@ class _DrawingPlaygroundState extends State<DrawingPlayground> {
     required double mood,
     required FaceType faceType,
     required bool blush,
+    double? eyeRadius,
+    double? eyeGap,
     Color? color,
   }) {
     _pushUndoState();
@@ -201,6 +204,8 @@ class _DrawingPlaygroundState extends State<DrawingPlayground> {
         mood: mood,
         faceType: faceType,
         showBlush: blush,
+        eyeRadius: eyeRadius,
+        eyeGap: eyeGap,
         customColor: color,
         clearCustomColor: color == null,
       );
@@ -291,10 +296,12 @@ class _DrawingPlaygroundState extends State<DrawingPlayground> {
             avatar: const Text('🤖'),
             label: const Text('Robot'),
             onPressed: () => _applyPreset(
-              mood: 0.75,
+              mood: 0.50,
               faceType: FaceType.robot,
               blush: false,
-              color: const Color(0xFF94A3B8),
+              eyeRadius: 18.0,
+              eyeGap: 48.0,
+              color: const Color(0xFFA3E635),
             ),
           ),
         ],
@@ -550,50 +557,16 @@ class SmileyPainter extends CustomPainter {
 
     // === Layer Recipe (Painter's Algorithm) ===
     // 1) Face fill & Face Border
-    if (config.faceType == FaceType.robot) {
-      // Robot head: Rounded rectangle
-      final robotRect = Rect.fromCenter(center: c, width: r * 1.8, height: r * 1.7);
-      final robotRRect = RRect.fromRectAndRadius(robotRect, Radius.circular(r * 0.25));
+    final facePaint = Paint()
+      ..color = faceColor
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(c, r, facePaint);
 
-      // Robot antenna
-      final antennaPaint = Paint()
-        ..color = Colors.black87
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = r * 0.04;
-      canvas.drawLine(
-        Offset(c.dx, c.dy - r * 0.85),
-        Offset(c.dx, c.dy - r * 1.25),
-        antennaPaint,
-      );
-      final bulbPaint = Paint()
-        ..color = Colors.redAccent
-        ..style = PaintingStyle.fill;
-      canvas.drawCircle(Offset(c.dx, c.dy - r * 1.25), r * 0.10, bulbPaint);
-
-      // Head fill & stroke
-      final facePaint = Paint()
-        ..color = faceColor
-        ..style = PaintingStyle.fill;
-      canvas.drawRRect(robotRRect, facePaint);
-
-      final border = Paint()
-        ..color = Colors.black87
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = r * 0.035;
-      canvas.drawRRect(robotRRect, border);
-    } else {
-      // Classic circle face
-      final facePaint = Paint()
-        ..color = faceColor
-        ..style = PaintingStyle.fill;
-      canvas.drawCircle(c, r, facePaint);
-
-      final border = Paint()
-        ..color = Colors.black87
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = r * 0.035;
-      canvas.drawCircle(c, r, border);
-    }
+    final border = Paint()
+      ..color = Colors.black87
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = r * 0.035;
+    canvas.drawCircle(c, r, border);
 
     // 2) Eyes (Positioned symmetrically relative to center)
     final eyePaint = Paint()..color = Colors.black87;
@@ -603,6 +576,7 @@ class SmileyPainter extends CustomPainter {
 
     switch (config.faceType) {
       case FaceType.classic:
+      case FaceType.robot:
         // Round eyes with cute specular catchlights
         canvas.drawCircle(leftEyeCenter, eyeRadius, eyePaint);
         canvas.drawCircle(rightEyeCenter, eyeRadius, eyePaint);
@@ -671,22 +645,6 @@ class SmileyPainter extends CustomPainter {
 
         canvas.drawCircle(leftEyeCenter, surprisedEyeRadius * 0.5, eyePaint);
         canvas.drawCircle(rightEyeCenter, surprisedEyeRadius * 0.5, eyePaint);
-        break;
-
-      case FaceType.robot:
-        final visorPaint = Paint()
-          ..color = Colors.cyanAccent.shade700
-          ..style = PaintingStyle.fill;
-        final visorBorder = Paint()
-          ..color = Colors.black87
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = r * 0.025;
-        final eyeRectLeft = Rect.fromCenter(center: leftEyeCenter, width: eyeRadius * 2.0, height: eyeRadius * 1.8);
-        final eyeRectRight = Rect.fromCenter(center: rightEyeCenter, width: eyeRadius * 2.0, height: eyeRadius * 1.8);
-        canvas.drawRRect(RRect.fromRectAndRadius(eyeRectLeft, const Radius.circular(4)), visorPaint);
-        canvas.drawRRect(RRect.fromRectAndRadius(eyeRectLeft, const Radius.circular(4)), visorBorder);
-        canvas.drawRRect(RRect.fromRectAndRadius(eyeRectRight, const Radius.circular(4)), visorPaint);
-        canvas.drawRRect(RRect.fromRectAndRadius(eyeRectRight, const Radius.circular(4)), visorBorder);
         break;
     }
 
@@ -806,21 +764,13 @@ class SmileyPainter extends CustomPainter {
         break;
 
       case FaceType.robot:
-        final gridPaint = Paint()
-          ..color = Colors.black87
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = r * 0.03;
-        final mouthRect = Rect.fromCenter(
-          center: Offset(c.dx, c.dy + r * 0.35),
-          width: r * 0.9,
-          height: r * 0.30,
+        final mouthWidth = r * 0.82;
+        final mouthY = c.dy + r * 0.20;
+        canvas.drawLine(
+          Offset(c.dx - mouthWidth * 0.5, mouthY),
+          Offset(c.dx + mouthWidth * 0.5, mouthY),
+          mouthPaint,
         );
-        canvas.drawRect(mouthRect, gridPaint);
-        // Vertical grid bars
-        for (int i = 1; i <= 3; i++) {
-          final barX = mouthRect.left + (mouthRect.width / 4) * i;
-          canvas.drawLine(Offset(barX, mouthRect.top), Offset(barX, mouthRect.bottom), gridPaint);
-        }
         break;
     }
 

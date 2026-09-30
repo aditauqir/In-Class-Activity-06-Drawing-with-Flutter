@@ -66,7 +66,7 @@ The compiled Android release APK is published and available for download under G
 
 ---
 
-## Critical Thinking Gauntlet
+## Critical Thinking & Documentation
 
-Detailed responses to the assignment critical thinking prompts, including emulator screenshots and redraw analysis, are documented in:
+Responses to the assignment reflection prompts and emulator screenshots are documented in:
 - **[docs/critical_thinking.md](docs/critical_thinking.md)**
