@@ -2,18 +2,20 @@
 // Student: Adi Tauqir
 // Date: September 30, 2026
 
-import 'dart:math' show Random, pi;
+import 'dart:math' show Random, min, pi;
 import 'package:flutter/material.dart';
 
 void main() => runApp(const SmileyApp());
 
-enum FaceType { classic, sleepy, surprised }
+enum FaceType { classic, sleepy, surprised, winking, robot }
 
-/// Immutable configuration representation for undo stack tracking
+/// Immutable configuration model for the drawing playground & undo stack
 class FaceConfig {
   final double mood;
   final FaceType faceType;
   final Color? customColor;
+  final double eyeRadius; // Base radius (default 14.0 at 300px scale)
+  final double eyeGap; // Base eye center offset from middle (default 48.0 at 300px scale)
   final bool showBlush;
   final bool showHat;
   final bool showGlasses;
@@ -23,6 +25,8 @@ class FaceConfig {
     required this.mood,
     required this.faceType,
     this.customColor,
+    this.eyeRadius = 14.0,
+    this.eyeGap = 48.0,
     required this.showBlush,
     required this.showHat,
     required this.showGlasses,
@@ -34,6 +38,8 @@ class FaceConfig {
     FaceType? faceType,
     Color? customColor,
     bool clearCustomColor = false,
+    double? eyeRadius,
+    double? eyeGap,
     bool? showBlush,
     bool? showHat,
     bool? showGlasses,
@@ -43,6 +49,8 @@ class FaceConfig {
       mood: mood ?? this.mood,
       faceType: faceType ?? this.faceType,
       customColor: clearCustomColor ? null : (customColor ?? this.customColor),
+      eyeRadius: eyeRadius ?? this.eyeRadius,
+      eyeGap: eyeGap ?? this.eyeGap,
       showBlush: showBlush ?? this.showBlush,
       showHat: showHat ?? this.showHat,
       showGlasses: showGlasses ?? this.showGlasses,
@@ -76,10 +84,12 @@ class DrawingPlayground extends StatefulWidget {
 }
 
 class _DrawingPlaygroundState extends State<DrawingPlayground> {
-  // Current active configuration
+  // Current active configuration (defaults to Beaming happy face)
   FaceConfig _config = const FaceConfig(
-    mood: 0.8,
+    mood: 0.85,
     faceType: FaceType.classic,
+    eyeRadius: 14.0,
+    eyeGap: 48.0,
     showBlush: true,
     showHat: false,
     showGlasses: false,
@@ -89,20 +99,30 @@ class _DrawingPlaygroundState extends State<DrawingPlayground> {
   // Undo history stack
   final List<FaceConfig> _undoStack = [];
 
-  final double eyeRadius = 14.0;
   final Random _random = Random();
+  bool _showFineTuning = false;
 
   Color get faceColor {
     if (_config.customColor != null) {
       return _config.customColor!;
     }
+    if (_config.faceType == FaceType.robot) {
+      return const Color(0xFF94A3B8); // Metallic slate for robot
+    }
     if (_config.mood < 0.35) {
       return Colors.lightBlue.shade200; // Cool color for frown
-    } else if (_config.mood <= 0.7) {
+    } else if (_config.mood <= 0.70) {
       return Colors.yellow.shade600; // Classic yellow for neutral
     } else {
-      return Colors.orangeAccent.shade200; // Warm color for happy
+      return Colors.amber.shade500; // Warm beaming color for happy
     }
+  }
+
+  String get moodLabel {
+    if (_config.mood >= 0.85) return 'Beaming';
+    if (_config.mood > 0.70) return 'Happy';
+    if (_config.mood >= 0.35) return 'Neutral';
+    return 'Sad';
   }
 
   void _pushUndoState() {
@@ -118,7 +138,7 @@ class _DrawingPlaygroundState extends State<DrawingPlayground> {
     setState(() {
       _config = previous;
     });
-    _showFeedback('Undo: Restored previous face configuration');
+    _showFeedback('Undo: Restored previous configuration');
   }
 
   void _showFeedback(String message) {
@@ -169,6 +189,25 @@ class _DrawingPlaygroundState extends State<DrawingPlayground> {
     );
   }
 
+  void _applyPreset({
+    required double mood,
+    required FaceType faceType,
+    required bool blush,
+    Color? color,
+  }) {
+    _pushUndoState();
+    setState(() {
+      _config = _config.copyWith(
+        mood: mood,
+        faceType: faceType,
+        showBlush: blush,
+        customColor: color,
+        clearCustomColor: color == null,
+      );
+    });
+    _showFeedback('Preset applied: ${faceType.name.toUpperCase()} ($moodLabel)');
+  }
+
   void _updateMood(double newMood) {
     setState(() {
       _config = _config.copyWith(
@@ -190,6 +229,250 @@ class _DrawingPlaygroundState extends State<DrawingPlayground> {
     });
   }
 
+  Widget _buildCanvasWidget() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final canvasDimension = min(constraints.maxWidth, constraints.maxHeight).clamp(160.0, 320.0);
+        return GestureDetector(
+          onTap: _cycleFace,
+          onLongPress: _randomizeMoodAndColor,
+          child: Tooltip(
+            message: 'Tap to cycle faces, Long-press to randomize',
+            child: CustomPaint(
+              size: Size.square(canvasDimension),
+              painter: SmileyPainter(
+                config: _config,
+                faceColor: faceColor,
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildPresetsRow() {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          ActionChip(
+            avatar: const Text('😊'),
+            label: const Text('Happy'),
+            onPressed: () => _applyPreset(
+              mood: 0.85,
+              faceType: FaceType.classic,
+              blush: true,
+            ),
+          ),
+          const SizedBox(width: 8),
+          ActionChip(
+            avatar: const Text('😢'),
+            label: const Text('Sad'),
+            onPressed: () => _applyPreset(
+              mood: 0.20,
+              faceType: FaceType.classic,
+              blush: false,
+            ),
+          ),
+          const SizedBox(width: 8),
+          ActionChip(
+            avatar: const Text('😉'),
+            label: const Text('Wink vibe'),
+            onPressed: () => _applyPreset(
+              mood: 0.85,
+              faceType: FaceType.winking,
+              blush: true,
+            ),
+          ),
+          const SizedBox(width: 8),
+          ActionChip(
+            avatar: const Text('🤖'),
+            label: const Text('Robot'),
+            onPressed: () => _applyPreset(
+              mood: 0.75,
+              faceType: FaceType.robot,
+              blush: false,
+              color: const Color(0xFF94A3B8),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildControls() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Presets row matching web interactive demo
+        _buildPresetsRow(),
+        const SizedBox(height: 6),
+
+        // Face style selector (Level 3 Multi-face gallery)
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: SegmentedButton<FaceType>(
+            segments: const [
+              ButtonSegment(
+                value: FaceType.classic,
+                label: Text('Classic'),
+                icon: Icon(Icons.sentiment_satisfied_alt, size: 18),
+              ),
+              ButtonSegment(
+                value: FaceType.sleepy,
+                label: Text('Sleepy'),
+                icon: Icon(Icons.bedtime_outlined, size: 18),
+              ),
+              ButtonSegment(
+                value: FaceType.surprised,
+                label: Text('Surprised'),
+                icon: Icon(Icons.sentiment_very_satisfied, size: 18),
+              ),
+              ButtonSegment(
+                value: FaceType.winking,
+                label: Text('Wink'),
+                icon: Icon(Icons.face_retouching_natural, size: 18),
+              ),
+              ButtonSegment(
+                value: FaceType.robot,
+                label: Text('Robot'),
+                icon: Icon(Icons.smart_toy_outlined, size: 18),
+              ),
+            ],
+            selected: {_config.faceType},
+            onSelectionChanged: (Set<FaceType> newSelection) {
+              _pushUndoState();
+              setState(() {
+                _config = _config.copyWith(faceType: newSelection.first);
+              });
+            },
+          ),
+        ),
+        const SizedBox(height: 6),
+
+        // Primary Mood Slider + Label
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Mood: $moodLabel (${_config.mood.toStringAsFixed(2)})',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+            IconButton(
+              icon: Icon(_showFineTuning ? Icons.expand_less : Icons.tune, size: 20),
+              tooltip: _showFineTuning ? 'Hide Details' : 'Fine-Tune',
+              onPressed: () => setState(() => _showFineTuning = !_showFineTuning),
+            ),
+          ],
+        ),
+        Slider(
+          value: _config.mood,
+          min: 0.0,
+          max: 1.0,
+          onChangeStart: (_) => _pushUndoState(),
+          onChanged: _updateMood,
+        ),
+
+        // Fine-tuning expandable details (Eye Radius, Eye Gap, Blush)
+        if (_showFineTuning) ...[
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.35),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Eye radius', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+                    Text('${_config.eyeRadius.round()}', style: const TextStyle(fontSize: 13)),
+                  ],
+                ),
+                Slider(
+                  value: _config.eyeRadius,
+                  min: 8.0,
+                  max: 22.0,
+                  onChanged: (v) => setState(() => _config = _config.copyWith(eyeRadius: v)),
+                ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Eye gap', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+                    Text('${_config.eyeGap.round()}', style: const TextStyle(fontSize: 13)),
+                  ],
+                ),
+                Slider(
+                  value: _config.eyeGap,
+                  min: 30.0,
+                  max: 65.0,
+                  onChanged: (v) => setState(() => _config = _config.copyWith(eyeGap: v)),
+                ),
+                Row(
+                  children: [
+                    Checkbox(
+                      value: _config.showBlush,
+                      onChanged: (v) => _toggleAccessory(blush: _config.showBlush),
+                    ),
+                    const Text('Show blush (drawOval)', style: TextStyle(fontSize: 13)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 6),
+        ],
+
+        // Accessories bar (Bonus)
+        Container(
+          padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 8),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              IconButton.filledTonal(
+                isSelected: _config.showHat,
+                icon: const Icon(Icons.pan_tool_alt_outlined),
+                selectedIcon: const Icon(Icons.pan_tool_alt),
+                tooltip: 'Toggle Hat',
+                onPressed: () => _toggleAccessory(hat: _config.showHat),
+              ),
+              IconButton.filledTonal(
+                isSelected: _config.showGlasses,
+                icon: const Icon(Icons.visibility_outlined),
+                selectedIcon: const Icon(Icons.visibility),
+                tooltip: 'Toggle Glasses',
+                onPressed: () => _toggleAccessory(glasses: _config.showGlasses),
+              ),
+              IconButton.filledTonal(
+                isSelected: _config.showMustache,
+                icon: const Icon(Icons.face_outlined),
+                selectedIcon: const Icon(Icons.face),
+                tooltip: 'Toggle Mustache',
+                onPressed: () => _toggleAccessory(mustache: _config.showMustache),
+              ),
+              IconButton.filledTonal(
+                isSelected: _config.showBlush,
+                icon: const Icon(Icons.favorite_border),
+                selectedIcon: const Icon(Icons.favorite),
+                tooltip: 'Toggle Blush',
+                onPressed: () => _toggleAccessory(blush: _config.showBlush),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -209,123 +492,37 @@ class _DrawingPlaygroundState extends State<DrawingPlayground> {
         ],
       ),
       body: SafeArea(
-        child: Column(
-          children: [
-            // Gallery selection
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 6.0),
-              child: SegmentedButton<FaceType>(
-                segments: const [
-                  ButtonSegment(
-                    value: FaceType.classic,
-                    label: Text('Classic'),
-                    icon: Icon(Icons.sentiment_satisfied_alt),
+        child: OrientationBuilder(
+          builder: (context, orientation) {
+            if (orientation == Orientation.landscape) {
+              return Row(
+                children: [
+                  Expanded(
+                    child: Center(child: _buildCanvasWidget()),
                   ),
-                  ButtonSegment(
-                    value: FaceType.sleepy,
-                    label: Text('Sleepy'),
-                    icon: Icon(Icons.bedtime_outlined),
-                  ),
-                  ButtonSegment(
-                    value: FaceType.surprised,
-                    label: Text('Surprised'),
-                    icon: Icon(Icons.sentiment_very_satisfied),
-                  ),
-                ],
-                selected: {_config.faceType},
-                onSelectionChanged: (Set<FaceType> newSelection) {
-                  _pushUndoState();
-                  setState(() {
-                    _config = _config.copyWith(faceType: newSelection.first);
-                  });
-                },
-              ),
-            ),
-            // Interactive touch canvas
-            Expanded(
-              child: Center(
-                child: GestureDetector(
-                  onTap: _cycleFace,
-                  onLongPress: _randomizeMoodAndColor,
-                  child: Tooltip(
-                    message: 'Tap to cycle faces, Long-press to randomize',
-                    child: CustomPaint(
-                      size: const Size(300, 300),
-                      painter: SmileyPainter(
-                        config: _config,
-                        faceColor: faceColor,
-                        eyeRadius: eyeRadius,
+                  Expanded(
+                    child: Center(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        child: _buildControls(),
                       ),
                     ),
                   ),
-                ),
-              ),
-            ),
-            // Accessory IconButtons (Bonus)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    IconButton.filledTonal(
-                      isSelected: _config.showHat,
-                      icon: const Icon(Icons.pan_tool_alt_outlined),
-                      selectedIcon: const Icon(Icons.pan_tool_alt),
-                      tooltip: 'Toggle Hat',
-                      onPressed: () => _toggleAccessory(hat: _config.showHat),
-                    ),
-                    IconButton.filledTonal(
-                      isSelected: _config.showGlasses,
-                      icon: const Icon(Icons.visibility_outlined),
-                      selectedIcon: const Icon(Icons.visibility),
-                      tooltip: 'Toggle Glasses',
-                      onPressed: () => _toggleAccessory(glasses: _config.showGlasses),
-                    ),
-                    IconButton.filledTonal(
-                      isSelected: _config.showMustache,
-                      icon: const Icon(Icons.face_outlined),
-                      selectedIcon: const Icon(Icons.face),
-                      tooltip: 'Toggle Mustache',
-                      onPressed: () => _toggleAccessory(mustache: _config.showMustache),
-                    ),
-                    IconButton.filledTonal(
-                      isSelected: _config.showBlush,
-                      icon: const Icon(Icons.favorite_border),
-                      selectedIcon: const Icon(Icons.favorite),
-                      tooltip: 'Toggle Blush',
-                      onPressed: () => _toggleAccessory(blush: _config.showBlush),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            // Slider and Mood display
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'Mood: ${_config.mood.toStringAsFixed(2)} (${_config.mood < 0.35 ? "Sad" : _config.mood <= 0.7 ? "Neutral" : "Happy"})',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  Slider(
-                    value: _config.mood,
-                    min: 0.0,
-                    max: 1.0,
-                    onChangeStart: (_) => _pushUndoState(),
-                    onChanged: _updateMood,
-                  ),
                 ],
-              ),
-            ),
-          ],
+              );
+            }
+            return Column(
+              children: [
+                Expanded(
+                  child: Center(child: _buildCanvasWidget()),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 2, 16, 8),
+                  child: _buildControls(),
+                ),
+              ],
+            );
+          },
         ),
       ),
     );
@@ -336,50 +533,112 @@ class SmileyPainter extends CustomPainter {
   SmileyPainter({
     required this.config,
     required this.faceColor,
-    required this.eyeRadius,
   });
 
   final FaceConfig config;
   final Color faceColor;
-  final double eyeRadius;
 
   @override
   void paint(Canvas canvas, Size size) {
     final c = Offset(size.width / 2, size.height / 2);
     final r = size.shortestSide * 0.40;
 
+    // Normalizing scaling factor relative to baseline 300px canvas (r = 120)
+    final scale = r / 120.0;
+    final eyeRadius = config.eyeRadius * scale;
+    final eyeDx = config.eyeGap * scale;
+
     // === Layer Recipe (Painter's Algorithm) ===
-    // 1) Face fill
-    final facePaint = Paint()
-      ..color = faceColor
-      ..style = PaintingStyle.fill;
-    canvas.drawCircle(c, r, facePaint);
+    // 1) Face fill & Face Border
+    if (config.faceType == FaceType.robot) {
+      // Robot head: Rounded rectangle
+      final robotRect = Rect.fromCenter(center: c, width: r * 1.8, height: r * 1.7);
+      final robotRRect = RRect.fromRectAndRadius(robotRect, Radius.circular(r * 0.25));
 
-    // 2) Face border
-    final border = Paint()
-      ..color = Colors.black87
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 4;
-    canvas.drawCircle(c, r, border);
+      // Robot antenna
+      final antennaPaint = Paint()
+        ..color = Colors.black87
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = r * 0.04;
+      canvas.drawLine(
+        Offset(c.dx, c.dy - r * 0.85),
+        Offset(c.dx, c.dy - r * 1.25),
+        antennaPaint,
+      );
+      final bulbPaint = Paint()
+        ..color = Colors.redAccent
+        ..style = PaintingStyle.fill;
+      canvas.drawCircle(Offset(c.dx, c.dy - r * 1.25), r * 0.10, bulbPaint);
 
-    // 3) Eyes (Customized per FaceType)
+      // Head fill & stroke
+      final facePaint = Paint()
+        ..color = faceColor
+        ..style = PaintingStyle.fill;
+      canvas.drawRRect(robotRRect, facePaint);
+
+      final border = Paint()
+        ..color = Colors.black87
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = r * 0.035;
+      canvas.drawRRect(robotRRect, border);
+    } else {
+      // Classic circle face
+      final facePaint = Paint()
+        ..color = faceColor
+        ..style = PaintingStyle.fill;
+      canvas.drawCircle(c, r, facePaint);
+
+      final border = Paint()
+        ..color = Colors.black87
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = r * 0.035;
+      canvas.drawCircle(c, r, border);
+    }
+
+    // 2) Eyes (Positioned symmetrically relative to center)
     final eyePaint = Paint()..color = Colors.black87;
     final eyeY = c.dy - r * 0.18;
-    final eyeDx = r * 0.35;
     final leftEyeCenter = Offset(c.dx - eyeDx, eyeY);
     final rightEyeCenter = Offset(c.dx + eyeDx, eyeY);
 
     switch (config.faceType) {
       case FaceType.classic:
+        // Round eyes with cute specular catchlights
         canvas.drawCircle(leftEyeCenter, eyeRadius, eyePaint);
         canvas.drawCircle(rightEyeCenter, eyeRadius, eyePaint);
+
+        final catchlightPaint = Paint()..color = Colors.white;
+        final catchlightRadius = eyeRadius * 0.28;
+        final catchlightOffset = Offset(-eyeRadius * 0.28, -eyeRadius * 0.28);
+        canvas.drawCircle(leftEyeCenter + catchlightOffset, catchlightRadius, catchlightPaint);
+        canvas.drawCircle(rightEyeCenter + catchlightOffset, catchlightRadius, catchlightPaint);
+        break;
+
+      case FaceType.winking:
+        // Left eye open with catchlight, Right eye winking curve
+        canvas.drawCircle(leftEyeCenter, eyeRadius, eyePaint);
+        final catchlightPaint = Paint()..color = Colors.white;
+        final catchlightRadius = eyeRadius * 0.28;
+        canvas.drawCircle(leftEyeCenter + Offset(-eyeRadius * 0.28, -eyeRadius * 0.28), catchlightRadius, catchlightPaint);
+
+        final winkPaint = Paint()
+          ..color = Colors.black87
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = r * 0.035
+          ..strokeCap = StrokeCap.round;
+        final winkRect = Rect.fromCenter(
+          center: rightEyeCenter,
+          width: eyeRadius * 2.2,
+          height: eyeRadius * 1.4,
+        );
+        canvas.drawArc(winkRect, 1.15 * pi, 0.70 * pi, false, winkPaint);
         break;
 
       case FaceType.sleepy:
         final closedEyePaint = Paint()
           ..color = Colors.black87
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 3.5
+          ..strokeWidth = r * 0.032
           ..strokeCap = StrokeCap.round;
         final eyeArcRectLeft = Rect.fromCenter(
           center: leftEyeCenter,
@@ -403,7 +662,7 @@ class SmileyPainter extends CustomPainter {
         final eyeBorderPaint = Paint()
           ..color = Colors.black87
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 3;
+          ..strokeWidth = r * 0.026;
 
         canvas.drawCircle(leftEyeCenter, surprisedEyeRadius, scleraPaint);
         canvas.drawCircle(leftEyeCenter, surprisedEyeRadius, eyeBorderPaint);
@@ -413,16 +672,32 @@ class SmileyPainter extends CustomPainter {
         canvas.drawCircle(leftEyeCenter, surprisedEyeRadius * 0.5, eyePaint);
         canvas.drawCircle(rightEyeCenter, surprisedEyeRadius * 0.5, eyePaint);
         break;
+
+      case FaceType.robot:
+        final visorPaint = Paint()
+          ..color = Colors.cyanAccent.shade700
+          ..style = PaintingStyle.fill;
+        final visorBorder = Paint()
+          ..color = Colors.black87
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = r * 0.025;
+        final eyeRectLeft = Rect.fromCenter(center: leftEyeCenter, width: eyeRadius * 2.0, height: eyeRadius * 1.8);
+        final eyeRectRight = Rect.fromCenter(center: rightEyeCenter, width: eyeRadius * 2.0, height: eyeRadius * 1.8);
+        canvas.drawRRect(RRect.fromRectAndRadius(eyeRectLeft, const Radius.circular(4)), visorPaint);
+        canvas.drawRRect(RRect.fromRectAndRadius(eyeRectLeft, const Radius.circular(4)), visorBorder);
+        canvas.drawRRect(RRect.fromRectAndRadius(eyeRectRight, const Radius.circular(4)), visorPaint);
+        canvas.drawRRect(RRect.fromRectAndRadius(eyeRectRight, const Radius.circular(4)), visorBorder);
+        break;
     }
 
-    // 4) Blush ovals
-    if (config.showBlush) {
+    // 3) Blush ovals (drawOval)
+    if (config.showBlush && config.faceType != FaceType.robot) {
       final blushPaint = Paint()
-        ..color = Colors.pinkAccent.withValues(alpha: 0.45)
+        ..color = const Color(0xFFF472B6).withValues(alpha: 0.55)
         ..style = PaintingStyle.fill;
-      final blushWidth = r * 0.22;
-      final blushHeight = r * 0.12;
-      final blushY = c.dy + r * 0.08;
+      final blushWidth = r * 0.24;
+      final blushHeight = r * 0.13;
+      final blushY = c.dy + r * 0.10;
       canvas.drawOval(
         Rect.fromCenter(
           center: Offset(c.dx - eyeDx, blushY),
@@ -441,24 +716,70 @@ class SmileyPainter extends CustomPainter {
       );
     }
 
-    // 5) Mouth — dynamically configured per FaceType and mood
+    // 4) Mouth — dynamically configured per FaceType and mood
     final mouthPaint = Paint()
       ..color = Colors.black87
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 5
-      ..strokeCap = StrokeCap.round;
+      ..strokeWidth = r * 0.042
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
 
     switch (config.faceType) {
       case FaceType.classic:
-        final mouthRect = Rect.fromCenter(
-          center: Offset(c.dx, c.dy + r * 0.15),
-          width: r * 1.0,
-          height: r * (0.4 + config.mood * 0.5),
-        );
-        if (config.mood >= 0.5) {
+      case FaceType.winking:
+        if (config.mood > 0.70) {
+          // Open-mouth beaming smile with dark cavity and tongue (matches demo screenshot!)
+          final mouthWidth = r * 0.95;
+          final mouthHeight = r * (0.35 + (config.mood - 0.70) * 0.65);
+          final mouthTopY = c.dy + r * 0.16;
+          final mouthLeftX = c.dx - mouthWidth * 0.45;
+          final mouthRightX = c.dx + mouthWidth * 0.45;
+
+          final openMouthPath = Path();
+          openMouthPath.moveTo(mouthLeftX, mouthTopY);
+          openMouthPath.quadraticBezierTo(c.dx, mouthTopY + r * 0.05, mouthRightX, mouthTopY);
+          openMouthPath.quadraticBezierTo(c.dx, mouthTopY + mouthHeight, mouthLeftX, mouthTopY);
+          openMouthPath.close();
+
+          // Dark maroon cavity fill
+          final cavityPaint = Paint()
+            ..color = const Color(0xFF6B1115)
+            ..style = PaintingStyle.fill;
+          canvas.drawPath(openMouthPath, cavityPaint);
+
+          // Tongue
+          final tonguePaint = Paint()
+            ..color = const Color(0xFFF43F5E)
+            ..style = PaintingStyle.fill;
+          canvas.save();
+          canvas.clipPath(openMouthPath);
+          canvas.drawOval(
+            Rect.fromCenter(
+              center: Offset(c.dx, mouthTopY + mouthHeight * 0.85),
+              width: mouthWidth * 0.50,
+              height: mouthHeight * 0.55,
+            ),
+            tonguePaint,
+          );
+          canvas.restore();
+
+          // Stroke border
+          canvas.drawPath(openMouthPath, mouthPaint);
+        } else if (config.mood >= 0.35) {
+          // Neutral soft smile arc
+          final mouthRect = Rect.fromCenter(
+            center: Offset(c.dx, c.dy + r * 0.15),
+            width: r * 1.0,
+            height: r * (0.4 + config.mood * 0.5),
+          );
           canvas.drawArc(mouthRect, 0.15 * pi, 0.70 * pi, false, mouthPaint);
         } else {
-          final frownRect = mouthRect.translate(0, r * 0.25);
+          // Frown arc
+          final frownRect = Rect.fromCenter(
+            center: Offset(c.dx, c.dy + r * 0.40),
+            width: r * 0.9,
+            height: r * 0.6,
+          );
           canvas.drawArc(frownRect, 1.15 * pi, 0.70 * pi, false, mouthPaint);
         }
         break;
@@ -469,7 +790,7 @@ class SmileyPainter extends CustomPainter {
           width: r * 0.6,
           height: r * 0.25,
         );
-        canvas.drawArc(sleepyMouthRect, 0.1 * pi, 0.8 * pi, false, mouthPaint..strokeWidth = 3.5);
+        canvas.drawArc(sleepyMouthRect, 0.1 * pi, 0.8 * pi, false, mouthPaint..strokeWidth = r * 0.03);
         break;
 
       case FaceType.surprised:
@@ -483,9 +804,27 @@ class SmileyPainter extends CustomPainter {
         );
         canvas.drawOval(openMouthRect, openMouthPaint);
         break;
+
+      case FaceType.robot:
+        final gridPaint = Paint()
+          ..color = Colors.black87
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = r * 0.03;
+        final mouthRect = Rect.fromCenter(
+          center: Offset(c.dx, c.dy + r * 0.35),
+          width: r * 0.9,
+          height: r * 0.30,
+        );
+        canvas.drawRect(mouthRect, gridPaint);
+        // Vertical grid bars
+        for (int i = 1; i <= 3; i++) {
+          final barX = mouthRect.left + (mouthRect.width / 4) * i;
+          canvas.drawLine(Offset(barX, mouthRect.top), Offset(barX, mouthRect.bottom), gridPaint);
+        }
+        break;
     }
 
-    // 6) Mustache accessory (Layered between nose and mouth)
+    // 5) Mustache accessory (Layered between nose and mouth)
     if (config.showMustache) {
       final mustachePaint = Paint()
         ..color = Colors.brown.shade900
@@ -523,12 +862,12 @@ class SmileyPainter extends CustomPainter {
       canvas.drawPath(mustachePath, mustachePaint);
     }
 
-    // 7) Glasses accessory (Layered over eyes)
+    // 6) Glasses accessory (Layered over eyes)
     if (config.showGlasses) {
       final glassesPaint = Paint()
         ..color = Colors.black87
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 3.5;
+        ..strokeWidth = r * 0.03;
       final glassesRadius = eyeRadius * 1.5;
       canvas.drawCircle(leftEyeCenter, glassesRadius, glassesPaint);
       canvas.drawCircle(rightEyeCenter, glassesRadius, glassesPaint);
@@ -539,7 +878,7 @@ class SmileyPainter extends CustomPainter {
       );
     }
 
-    // 8) Hat accessory (Top layer)
+    // 7) Hat accessory (Top layer)
     if (config.showHat) {
       final hatPaint = Paint()
         ..color = Colors.brown.shade800
@@ -574,11 +913,12 @@ class SmileyPainter extends CustomPainter {
   bool shouldRepaint(covariant SmileyPainter oldDelegate) {
     return oldDelegate.config.mood != config.mood ||
         oldDelegate.config.faceType != config.faceType ||
+        oldDelegate.config.eyeRadius != config.eyeRadius ||
+        oldDelegate.config.eyeGap != config.eyeGap ||
         oldDelegate.config.showBlush != config.showBlush ||
         oldDelegate.config.showHat != config.showHat ||
         oldDelegate.config.showGlasses != config.showGlasses ||
         oldDelegate.config.showMustache != config.showMustache ||
-        oldDelegate.faceColor != faceColor ||
-        oldDelegate.eyeRadius != eyeRadius;
+        oldDelegate.faceColor != faceColor;
   }
 }
