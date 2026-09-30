@@ -2,7 +2,7 @@
 // Student: Adi Tauqir
 // Date: September 30, 2026
 
-import 'dart:math' show pi;
+import 'dart:math' show Random, pi;
 import 'package:flutter/material.dart';
 
 void main() => runApp(const SmileyApp());
@@ -38,11 +38,17 @@ class _DrawingPlaygroundState extends State<DrawingPlayground> {
   double mood = 0.8; // 0.0 sad → 1.0 happy
   double eyeRadius = 14.0;
   FaceType faceType = FaceType.classic;
+  Color? _customColor;
   bool showBlush = true;
   bool showHat = false;
   bool showGlasses = false;
 
+  final Random _random = Random();
+
   Color get faceColor {
+    if (_customColor != null) {
+      return _customColor!;
+    }
     if (mood < 0.35) {
       return Colors.lightBlue.shade200; // Cool color for frown
     } else if (mood <= 0.7) {
@@ -52,6 +58,50 @@ class _DrawingPlaygroundState extends State<DrawingPlayground> {
     }
   }
 
+  void _showFeedback(String message) {
+    ScaffoldMessenger.of(context).clearSnackBars();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  void _cycleFace() {
+    final nextIndex = (faceType.index + 1) % FaceType.values.length;
+    final nextType = FaceType.values[nextIndex];
+    setState(() {
+      faceType = nextType;
+    });
+    _showFeedback('Face style cycled to: ${nextType.name.toUpperCase()}');
+  }
+
+  void _randomizeMoodAndColor() {
+    final newMood = _random.nextDouble();
+    final palette = [
+      Colors.yellow.shade600,
+      Colors.lightBlue.shade200,
+      Colors.orangeAccent.shade200,
+      Colors.pink.shade200,
+      Colors.lightGreen.shade300,
+      Colors.purple.shade200,
+      Colors.teal.shade200,
+    ];
+    final newColor = palette[_random.nextInt(palette.length)];
+    final nextType = FaceType.values[_random.nextInt(FaceType.values.length)];
+
+    setState(() {
+      mood = newMood;
+      _customColor = newColor;
+      faceType = nextType;
+    });
+    _showFeedback(
+      'Randomized: ${nextType.name.toUpperCase()} (Mood: ${newMood.toStringAsFixed(2)})',
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -59,7 +109,7 @@ class _DrawingPlaygroundState extends State<DrawingPlayground> {
       body: SafeArea(
         child: Column(
           children: [
-            // Level 3: Face gallery selection
+            // Gallery selection
             Padding(
               padding: const EdgeInsets.only(top: 8.0, bottom: 4.0),
               child: SegmentedButton<FaceType>(
@@ -88,18 +138,26 @@ class _DrawingPlaygroundState extends State<DrawingPlayground> {
                 },
               ),
             ),
+            // Level 4: Interactive GestureDetector wrapping CustomPaint
             Expanded(
               child: Center(
-                child: CustomPaint(
-                  size: const Size(300, 300),
-                  painter: SmileyPainter(
-                    mood: mood,
-                    faceType: faceType,
-                    faceColor: faceColor,
-                    eyeRadius: eyeRadius,
-                    showBlush: showBlush,
-                    showHat: showHat,
-                    showGlasses: showGlasses,
+                child: GestureDetector(
+                  onTap: _cycleFace,
+                  onLongPress: _randomizeMoodAndColor,
+                  child: Tooltip(
+                    message: 'Tap to cycle faces, Long-press to randomize',
+                    child: CustomPaint(
+                      size: const Size(300, 300),
+                      painter: SmileyPainter(
+                        mood: mood,
+                        faceType: faceType,
+                        faceColor: faceColor,
+                        eyeRadius: eyeRadius,
+                        showBlush: showBlush,
+                        showHat: showHat,
+                        showGlasses: showGlasses,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -117,7 +175,12 @@ class _DrawingPlaygroundState extends State<DrawingPlayground> {
                     value: mood,
                     min: 0.0,
                     max: 1.0,
-                    onChanged: (double v) => setState(() => mood = v),
+                    onChanged: (double v) {
+                      setState(() {
+                        mood = v;
+                        _customColor = null; // Resume mood-band color tracking
+                      });
+                    },
                   ),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -195,13 +258,11 @@ class SmileyPainter extends CustomPainter {
 
     switch (faceType) {
       case FaceType.classic:
-        // Classic: standard filled round eyes
         canvas.drawCircle(leftEyeCenter, eyeRadius, eyePaint);
         canvas.drawCircle(rightEyeCenter, eyeRadius, eyePaint);
         break;
 
       case FaceType.sleepy:
-        // Sleepy: curved closed eye arcs
         final closedEyePaint = Paint()
           ..color = Colors.black87
           ..style = PaintingStyle.stroke
@@ -217,13 +278,11 @@ class SmileyPainter extends CustomPainter {
           width: eyeRadius * 2.2,
           height: eyeRadius * 1.4,
         );
-        // Upward curved closed eyelid arcs
         canvas.drawArc(eyeArcRectLeft, 1.15 * pi, 0.70 * pi, false, closedEyePaint);
         canvas.drawArc(eyeArcRectRight, 1.15 * pi, 0.70 * pi, false, closedEyePaint);
         break;
 
       case FaceType.surprised:
-        // Surprised: bigger wide open eyes with inner pupil
         final surprisedEyeRadius = eyeRadius * 1.35;
         final scleraPaint = Paint()
           ..color = Colors.white
@@ -233,13 +292,11 @@ class SmileyPainter extends CustomPainter {
           ..style = PaintingStyle.stroke
           ..strokeWidth = 3;
 
-        // Sclera + stroke border
         canvas.drawCircle(leftEyeCenter, surprisedEyeRadius, scleraPaint);
         canvas.drawCircle(leftEyeCenter, surprisedEyeRadius, eyeBorderPaint);
         canvas.drawCircle(rightEyeCenter, surprisedEyeRadius, scleraPaint);
         canvas.drawCircle(rightEyeCenter, surprisedEyeRadius, eyeBorderPaint);
 
-        // Pupil
         canvas.drawCircle(leftEyeCenter, surprisedEyeRadius * 0.5, eyePaint);
         canvas.drawCircle(rightEyeCenter, surprisedEyeRadius * 0.5, eyePaint);
         break;
@@ -294,7 +351,6 @@ class SmileyPainter extends CustomPainter {
         break;
 
       case FaceType.sleepy:
-        // Soft, gentle subtle mouth
         final sleepyMouthRect = Rect.fromCenter(
           center: Offset(c.dx, c.dy + r * 0.22),
           width: r * 0.6,
@@ -304,7 +360,6 @@ class SmileyPainter extends CustomPainter {
         break;
 
       case FaceType.surprised:
-        // Round open mouth (oval / circle)
         final openMouthPaint = Paint()
           ..color = Colors.black87
           ..style = PaintingStyle.fill;
