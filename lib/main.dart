@@ -9,6 +9,48 @@ void main() => runApp(const SmileyApp());
 
 enum FaceType { classic, sleepy, surprised }
 
+/// Immutable configuration representation for undo stack tracking
+class FaceConfig {
+  final double mood;
+  final FaceType faceType;
+  final Color? customColor;
+  final bool showBlush;
+  final bool showHat;
+  final bool showGlasses;
+  final bool showMustache;
+
+  const FaceConfig({
+    required this.mood,
+    required this.faceType,
+    this.customColor,
+    required this.showBlush,
+    required this.showHat,
+    required this.showGlasses,
+    required this.showMustache,
+  });
+
+  FaceConfig copyWith({
+    double? mood,
+    FaceType? faceType,
+    Color? customColor,
+    bool clearCustomColor = false,
+    bool? showBlush,
+    bool? showHat,
+    bool? showGlasses,
+    bool? showMustache,
+  }) {
+    return FaceConfig(
+      mood: mood ?? this.mood,
+      faceType: faceType ?? this.faceType,
+      customColor: clearCustomColor ? null : (customColor ?? this.customColor),
+      showBlush: showBlush ?? this.showBlush,
+      showHat: showHat ?? this.showHat,
+      showGlasses: showGlasses ?? this.showGlasses,
+      showMustache: showMustache ?? this.showMustache,
+    );
+  }
+}
+
 class SmileyApp extends StatelessWidget {
   const SmileyApp({super.key});
 
@@ -34,28 +76,49 @@ class DrawingPlayground extends StatefulWidget {
 }
 
 class _DrawingPlaygroundState extends State<DrawingPlayground> {
-  // Drawing "state" — changing these + setState() triggers shouldRepaint
-  double mood = 0.8; // 0.0 sad → 1.0 happy
-  double eyeRadius = 14.0;
-  FaceType faceType = FaceType.classic;
-  Color? _customColor;
-  bool showBlush = true;
-  bool showHat = false;
-  bool showGlasses = false;
+  // Current active configuration
+  FaceConfig _config = const FaceConfig(
+    mood: 0.8,
+    faceType: FaceType.classic,
+    showBlush: true,
+    showHat: false,
+    showGlasses: false,
+    showMustache: false,
+  );
 
+  // Undo history stack
+  final List<FaceConfig> _undoStack = [];
+
+  final double eyeRadius = 14.0;
   final Random _random = Random();
 
   Color get faceColor {
-    if (_customColor != null) {
-      return _customColor!;
+    if (_config.customColor != null) {
+      return _config.customColor!;
     }
-    if (mood < 0.35) {
+    if (_config.mood < 0.35) {
       return Colors.lightBlue.shade200; // Cool color for frown
-    } else if (mood <= 0.7) {
+    } else if (_config.mood <= 0.7) {
       return Colors.yellow.shade600; // Classic yellow for neutral
     } else {
       return Colors.orangeAccent.shade200; // Warm color for happy
     }
+  }
+
+  void _pushUndoState() {
+    _undoStack.add(_config);
+    if (_undoStack.length > 50) {
+      _undoStack.removeAt(0);
+    }
+  }
+
+  void _undo() {
+    if (_undoStack.isEmpty) return;
+    final previous = _undoStack.removeLast();
+    setState(() {
+      _config = previous;
+    });
+    _showFeedback('Undo: Restored previous face configuration');
   }
 
   void _showFeedback(String message) {
@@ -70,15 +133,17 @@ class _DrawingPlaygroundState extends State<DrawingPlayground> {
   }
 
   void _cycleFace() {
-    final nextIndex = (faceType.index + 1) % FaceType.values.length;
+    _pushUndoState();
+    final nextIndex = (_config.faceType.index + 1) % FaceType.values.length;
     final nextType = FaceType.values[nextIndex];
     setState(() {
-      faceType = nextType;
+      _config = _config.copyWith(faceType: nextType);
     });
     _showFeedback('Face style cycled to: ${nextType.name.toUpperCase()}');
   }
 
   void _randomizeMoodAndColor() {
+    _pushUndoState();
     final newMood = _random.nextDouble();
     final palette = [
       Colors.yellow.shade600,
@@ -93,25 +158,62 @@ class _DrawingPlaygroundState extends State<DrawingPlayground> {
     final nextType = FaceType.values[_random.nextInt(FaceType.values.length)];
 
     setState(() {
-      mood = newMood;
-      _customColor = newColor;
-      faceType = nextType;
+      _config = _config.copyWith(
+        mood: newMood,
+        customColor: newColor,
+        faceType: nextType,
+      );
     });
     _showFeedback(
       'Randomized: ${nextType.name.toUpperCase()} (Mood: ${newMood.toStringAsFixed(2)})',
     );
   }
 
+  void _updateMood(double newMood) {
+    setState(() {
+      _config = _config.copyWith(
+        mood: newMood,
+        clearCustomColor: true,
+      );
+    });
+  }
+
+  void _toggleAccessory({bool? hat, bool? glasses, bool? mustache, bool? blush}) {
+    _pushUndoState();
+    setState(() {
+      _config = _config.copyWith(
+        showHat: hat != null ? !hat : null,
+        showGlasses: glasses != null ? !glasses : null,
+        showMustache: mustache != null ? !mustache : null,
+        showBlush: blush != null ? !blush : null,
+      );
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('CustomPainter Smiley Lab')),
+      appBar: AppBar(
+        title: const Text('CustomPainter Smiley Lab'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.undo),
+            tooltip: 'Undo last change',
+            onPressed: _undoStack.isNotEmpty ? _undo : null,
+          ),
+          IconButton(
+            icon: const Icon(Icons.shuffle),
+            tooltip: 'Randomize',
+            onPressed: _randomizeMoodAndColor,
+          ),
+        ],
+      ),
       body: SafeArea(
         child: Column(
           children: [
             // Gallery selection
             Padding(
-              padding: const EdgeInsets.only(top: 8.0, bottom: 4.0),
+              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 6.0),
               child: SegmentedButton<FaceType>(
                 segments: const [
                   ButtonSegment(
@@ -130,15 +232,16 @@ class _DrawingPlaygroundState extends State<DrawingPlayground> {
                     icon: Icon(Icons.sentiment_very_satisfied),
                   ),
                 ],
-                selected: {faceType},
+                selected: {_config.faceType},
                 onSelectionChanged: (Set<FaceType> newSelection) {
+                  _pushUndoState();
                   setState(() {
-                    faceType = newSelection.first;
+                    _config = _config.copyWith(faceType: newSelection.first);
                   });
                 },
               ),
             ),
-            // Level 4: Interactive GestureDetector wrapping CustomPaint
+            // Interactive touch canvas
             Expanded(
               child: Center(
                 child: GestureDetector(
@@ -149,58 +252,75 @@ class _DrawingPlaygroundState extends State<DrawingPlayground> {
                     child: CustomPaint(
                       size: const Size(300, 300),
                       painter: SmileyPainter(
-                        mood: mood,
-                        faceType: faceType,
+                        config: _config,
                         faceColor: faceColor,
                         eyeRadius: eyeRadius,
-                        showBlush: showBlush,
-                        showHat: showHat,
-                        showGlasses: showGlasses,
                       ),
                     ),
                   ),
                 ),
               ),
             ),
+            // Accessory IconButtons (Bonus)
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    IconButton.filledTonal(
+                      isSelected: _config.showHat,
+                      icon: const Icon(Icons.pan_tool_alt_outlined),
+                      selectedIcon: const Icon(Icons.pan_tool_alt),
+                      tooltip: 'Toggle Hat',
+                      onPressed: () => _toggleAccessory(hat: _config.showHat),
+                    ),
+                    IconButton.filledTonal(
+                      isSelected: _config.showGlasses,
+                      icon: const Icon(Icons.visibility_outlined),
+                      selectedIcon: const Icon(Icons.visibility),
+                      tooltip: 'Toggle Glasses',
+                      onPressed: () => _toggleAccessory(glasses: _config.showGlasses),
+                    ),
+                    IconButton.filledTonal(
+                      isSelected: _config.showMustache,
+                      icon: const Icon(Icons.face_outlined),
+                      selectedIcon: const Icon(Icons.face),
+                      tooltip: 'Toggle Mustache',
+                      onPressed: () => _toggleAccessory(mustache: _config.showMustache),
+                    ),
+                    IconButton.filledTonal(
+                      isSelected: _config.showBlush,
+                      icon: const Icon(Icons.favorite_border),
+                      selectedIcon: const Icon(Icons.favorite),
+                      tooltip: 'Toggle Blush',
+                      onPressed: () => _toggleAccessory(blush: _config.showBlush),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            // Slider and Mood display
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    'Mood: ${mood.toStringAsFixed(2)} (${mood < 0.35 ? "Sad" : mood <= 0.7 ? "Neutral" : "Happy"})',
+                    'Mood: ${_config.mood.toStringAsFixed(2)} (${_config.mood < 0.35 ? "Sad" : _config.mood <= 0.7 ? "Neutral" : "Happy"})',
                     style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                   Slider(
-                    value: mood,
+                    value: _config.mood,
                     min: 0.0,
                     max: 1.0,
-                    onChanged: (double v) {
-                      setState(() {
-                        mood = v;
-                        _customColor = null; // Resume mood-band color tracking
-                      });
-                    },
-                  ),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      FilterChip(
-                        label: const Text('Blush'),
-                        selected: showBlush,
-                        onSelected: (val) => setState(() => showBlush = val),
-                      ),
-                      FilterChip(
-                        label: const Text('Hat'),
-                        selected: showHat,
-                        onSelected: (val) => setState(() => showHat = val),
-                      ),
-                      FilterChip(
-                        label: const Text('Glasses'),
-                        selected: showGlasses,
-                        onSelected: (val) => setState(() => showGlasses = val),
-                      ),
-                    ],
+                    onChangeStart: (_) => _pushUndoState(),
+                    onChanged: _updateMood,
                   ),
                 ],
               ),
@@ -214,28 +334,21 @@ class _DrawingPlaygroundState extends State<DrawingPlayground> {
 
 class SmileyPainter extends CustomPainter {
   SmileyPainter({
-    required this.mood,
-    required this.faceType,
+    required this.config,
     required this.faceColor,
     required this.eyeRadius,
-    required this.showBlush,
-    required this.showHat,
-    required this.showGlasses,
   });
 
-  final double mood;
-  final FaceType faceType;
+  final FaceConfig config;
   final Color faceColor;
   final double eyeRadius;
-  final bool showBlush;
-  final bool showHat;
-  final bool showGlasses;
 
   @override
   void paint(Canvas canvas, Size size) {
     final c = Offset(size.width / 2, size.height / 2);
     final r = size.shortestSide * 0.40;
 
+    // === Layer Recipe (Painter's Algorithm) ===
     // 1) Face fill
     final facePaint = Paint()
       ..color = faceColor
@@ -256,7 +369,7 @@ class SmileyPainter extends CustomPainter {
     final leftEyeCenter = Offset(c.dx - eyeDx, eyeY);
     final rightEyeCenter = Offset(c.dx + eyeDx, eyeY);
 
-    switch (faceType) {
+    switch (config.faceType) {
       case FaceType.classic:
         canvas.drawCircle(leftEyeCenter, eyeRadius, eyePaint);
         canvas.drawCircle(rightEyeCenter, eyeRadius, eyePaint);
@@ -303,7 +416,7 @@ class SmileyPainter extends CustomPainter {
     }
 
     // 4) Blush ovals
-    if (showBlush) {
+    if (config.showBlush) {
       final blushPaint = Paint()
         ..color = Colors.pinkAccent.withValues(alpha: 0.45)
         ..style = PaintingStyle.fill;
@@ -328,21 +441,21 @@ class SmileyPainter extends CustomPainter {
       );
     }
 
-    // 5) Mouth — dynamically configured per FaceType
+    // 5) Mouth — dynamically configured per FaceType and mood
     final mouthPaint = Paint()
       ..color = Colors.black87
       ..style = PaintingStyle.stroke
       ..strokeWidth = 5
       ..strokeCap = StrokeCap.round;
 
-    switch (faceType) {
+    switch (config.faceType) {
       case FaceType.classic:
         final mouthRect = Rect.fromCenter(
           center: Offset(c.dx, c.dy + r * 0.15),
           width: r * 1.0,
-          height: r * (0.4 + mood * 0.5),
+          height: r * (0.4 + config.mood * 0.5),
         );
-        if (mood >= 0.5) {
+        if (config.mood >= 0.5) {
           canvas.drawArc(mouthRect, 0.15 * pi, 0.70 * pi, false, mouthPaint);
         } else {
           final frownRect = mouthRect.translate(0, r * 0.25);
@@ -366,14 +479,52 @@ class SmileyPainter extends CustomPainter {
         final openMouthRect = Rect.fromCenter(
           center: Offset(c.dx, c.dy + r * 0.25),
           width: r * 0.42,
-          height: r * (0.50 + (mood * 0.25)),
+          height: r * (0.50 + (config.mood * 0.25)),
         );
         canvas.drawOval(openMouthRect, openMouthPaint);
         break;
     }
 
-    // 6) Glasses (Layered directly over eyes)
-    if (showGlasses) {
+    // 6) Mustache accessory (Layered between nose and mouth)
+    if (config.showMustache) {
+      final mustachePaint = Paint()
+        ..color = Colors.brown.shade900
+        ..style = PaintingStyle.fill;
+      final mustacheCenterY = c.dy + r * 0.08;
+      final mustachePath = Path();
+      // Left curl
+      mustachePath.moveTo(c.dx, mustacheCenterY);
+      mustachePath.quadraticBezierTo(
+        c.dx - r * 0.22,
+        mustacheCenterY - r * 0.08,
+        c.dx - r * 0.48,
+        mustacheCenterY + r * 0.10,
+      );
+      mustachePath.quadraticBezierTo(
+        c.dx - r * 0.20,
+        mustacheCenterY + r * 0.05,
+        c.dx,
+        mustacheCenterY + r * 0.02,
+      );
+      // Right curl
+      mustachePath.quadraticBezierTo(
+        c.dx + r * 0.20,
+        mustacheCenterY + r * 0.05,
+        c.dx + r * 0.48,
+        mustacheCenterY + r * 0.10,
+      );
+      mustachePath.quadraticBezierTo(
+        c.dx + r * 0.22,
+        mustacheCenterY - r * 0.08,
+        c.dx,
+        mustacheCenterY,
+      );
+      mustachePath.close();
+      canvas.drawPath(mustachePath, mustachePaint);
+    }
+
+    // 7) Glasses accessory (Layered over eyes)
+    if (config.showGlasses) {
       final glassesPaint = Paint()
         ..color = Colors.black87
         ..style = PaintingStyle.stroke
@@ -388,8 +539,8 @@ class SmileyPainter extends CustomPainter {
       );
     }
 
-    // 7) Hat (Layered on top of head)
-    if (showHat) {
+    // 8) Hat accessory (Top layer)
+    if (config.showHat) {
       final hatPaint = Paint()
         ..color = Colors.brown.shade800
         ..style = PaintingStyle.fill;
@@ -421,12 +572,13 @@ class SmileyPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant SmileyPainter oldDelegate) {
-    return oldDelegate.mood != mood ||
-        oldDelegate.faceType != faceType ||
+    return oldDelegate.config.mood != config.mood ||
+        oldDelegate.config.faceType != config.faceType ||
+        oldDelegate.config.showBlush != config.showBlush ||
+        oldDelegate.config.showHat != config.showHat ||
+        oldDelegate.config.showGlasses != config.showGlasses ||
+        oldDelegate.config.showMustache != config.showMustache ||
         oldDelegate.faceColor != faceColor ||
-        oldDelegate.eyeRadius != eyeRadius ||
-        oldDelegate.showBlush != showBlush ||
-        oldDelegate.showHat != showHat ||
-        oldDelegate.showGlasses != showGlasses;
+        oldDelegate.eyeRadius != eyeRadius;
   }
 }
